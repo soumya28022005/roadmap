@@ -7,7 +7,7 @@
   "scripts": {
     "tsc": "tsc -p tsconfig.json",
     "dev": "tsx watch src/index.ts",
-    "build": "tsc && tsc-alias -p tsconfig.json --resolve-full-paths",
+    "build": "tsc",
     "clean": "rm -rf dist/ .turbo/ .logs/",
     "start": "node dist",
     "check-types": "tsc --noEmit",
