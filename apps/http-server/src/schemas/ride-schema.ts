@@ -10,5 +10,5 @@ export const rideSchema = z.object({
   driverId: z.string(),
   origin: z.number(),
   destination: z.number(),
-  vehicheType: z.enum(VehicleType),
+  vehicleType: z.enum(VehicleType),
 });

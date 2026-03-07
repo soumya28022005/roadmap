@@ -4,10 +4,12 @@ import { authRouter } from "@/routers/auth-routes";
 import { authMiddleware } from "@/middlewares/auth-middleware";
 import { hazardRouter } from "./routers/hazard-routes";
 import { rideRouter } from "./routers/ride-routes";
+import cookieParser from "cookie-parser";
 
 const app: Express = express();
 
 app.use(express.json());
+app.use(cookieParser());
 
 app.use("/auth", authRouter);
 app.use("/ride", rideRouter);
