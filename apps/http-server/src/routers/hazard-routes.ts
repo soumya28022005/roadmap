@@ -1,16 +1,19 @@
+import express, { Router } from "express";
 import { addNewHazard, confirmHazard, getAllHazards } from "@/controllers/hazard-controller";
 import { authMiddleware } from "@/middlewares/auth-middleware";
-import express, { Router } from "express";
 
 const router: Router = express.Router();
 
-// the driver will add new report of a road hazards
-router.post("/new-report", authMiddleware, addNewHazard);
+// RESTful principle: Avoid action verbs in the path if possible
+// The HTTP method (POST, GET) already describes the action
 
-// the other drivers will be asked to confirm if the hazards exist or not
-router.post("/confirm", authMiddleware, confirmHazard);
+// Get all hazards
+router.get("/", authMiddleware, getAllHazards);
 
-// get all hazards
-router.get("/all", authMiddleware, getAllHazards);
+// The driver will add a new report of a road hazard
+router.post("/", authMiddleware, addNewHazard);
+
+// The other drivers will be asked to confirm if the hazards exist or not
+router.post("/:hazardId/confirm", authMiddleware, confirmHazard); // Standard URL structure for specific resources
 
 export { router as hazardRouter };

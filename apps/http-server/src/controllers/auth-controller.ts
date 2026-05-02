@@ -1,108 +1,113 @@
-import { Request, Response } from "express";
+import { Request, Response, NextFunction } from "express";
 import { prisma } from "@repo/db";
 import bcrypt from "bcrypt";
-import { signinSchema, signupSchema } from "@/schemas/auth-schema";
 import jwt from "jsonwebtoken";
+import { signinSchema, signupSchema } from "@/schemas/auth-schema";
 
-export const signupController = async (req: Request, res: Response) => {
+// Helper for signing token to keep code DRY
+const generateToken = (userId: string, email: string) => {
+  if (!process.env.JWT_SECRET) {
+    throw new Error("FATAL: JWT_SECRET is not defined in environment variables");
+  }
+  return jwt.sign({ id: userId, email }, process.env.JWT_SECRET, {
+    expiresIn: "7d",
+  });
+};
+
+const cookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict" as const, // Prevents CSRF attacks
+  maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+};
+
+export const signupController = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsedData = signupSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(422).json({
+        status: "fail",
         message: "Invalid input data",
-        error: parsedData.error.format(),
+        errors: parsedData.error.flatten().fieldErrors, // Cleaner error format for frontend
       });
     }
 
     const { name, email, phoneNumber, password } = parsedData.data;
 
-    // check if user already exists
-    const existingUser = await prisma.user.findFirst({ where: { OR: [{ email }, { phoneNumber }] } });
+    const existingUser = await prisma.user.findFirst({
+      where: { OR: [{ email }, { phoneNumber }] },
+    });
 
     if (existingUser) {
-      return res.status(400).json({ message: "User already exists" });
+      return res.status(409).json({ // 409 Conflict is standard for already exists
+        status: "fail",
+        message: "User with this email or phone number already exists",
+      });
     }
 
     const hashedPassword = await bcrypt.hash(password, 12);
 
-    // create new user
-    const newUser = await prisma.user.create({ data: { name, email, phoneNumber, passwordHash: hashedPassword } });
-
-    const token = jwt.sign(
-      { id: newUser.id, email: newUser.email },
-      process.env.JWT_SECRET || "secr3t",
-      { expiresIn: "7d" }
-    );
-
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+    const newUser = await prisma.user.create({
+      data: { name, email, phoneNumber, passwordHash: hashedPassword },
     });
 
-    return res.status(200).json({
+    const token = generateToken(newUser.id, newUser.email);
+
+    res.cookie("auth_token", token, cookieOptions);
+
+    return res.status(201).json({ // 201 Created
+      status: "success",
       message: "User created successfully",
-      token,
-      user: { id: newUser.id },
+      data: {
+        user: { id: newUser.id, name: newUser.name, email: newUser.email },
+        token // Return token here as well if mobile apps are consuming this API
+      },
     });
-  } catch (err: any) {
-    console.error("Signup error: ", err);
-    res.status(500).json({
-      message: "Something went wrong during signup",
-      error: err.message,
-    });
+  } catch (err) {
+    next(err); // Pass to global error handler
   }
 };
 
-export const signinController = async (req: Request, res: Response) => {
+export const signinController = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsedData = signinSchema.safeParse(req.body);
     if (!parsedData.success) {
       return res.status(422).json({
+        status: "fail",
         message: "Invalid input data",
-        error: parsedData.error,
+        errors: parsedData.error.flatten().fieldErrors,
       });
     }
 
     const { email, phoneNumber, password } = parsedData.data;
 
-    // find user
-    const user = await prisma.user.findFirst({ where: { OR: [{ email }, { phoneNumber }] } });
+    const user = await prisma.user.findFirst({
+      where: { OR: [{ email }, { phoneNumber }] },
+    });
 
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      // Don't reveal if the user exists or password is wrong in production (Security best practice)
+      return res.status(401).json({ status: "fail", message: "Invalid credentials" });
     }
 
-    // check password
     const isPasswordValid = await bcrypt.compare(password, user.passwordHash);
     if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({ status: "fail", message: "Invalid credentials" });
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      process.env.JWT_SECRET || "secr3t",
-      { expiresIn: "7d" }
-    );
+    const token = generateToken(user.id, user.email);
 
-    res.cookie("auth_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    res.cookie("auth_token", token, cookieOptions);
 
-    return res.json({
+    return res.status(200).json({
+      status: "success",
       message: "Signin successful",
-      token,
-      user: { id: user.id }
+      data: {
+        user: { id: user.id, name: user.name, email: user.email },
+        token
+      }
     });
-  } catch (err: any) {
-    console.error("Signin error: ", err);
-    return res.status(500).json({
-      message: "Something went wrong during signin",
-      error: err.message,
-    });
+  } catch (err) {
+    next(err); 
   }
 };

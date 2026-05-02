@@ -1,5 +1,5 @@
 import { NextFunction, Request, Response } from "express";
-import jwt, { JwtPayload } from "jsonwebtoken";
+import jwt, { JwtPayload, JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -16,37 +16,47 @@ export const authMiddleware = (
   try {
     let token: string | undefined;
 
-    // check Authorization header
+    // First check Authorization header
     const authHeader = req.headers["authorization"];
     if (authHeader && authHeader.startsWith("Bearer ")) {
       token = authHeader.split(" ")[1];
     }
 
-    // or from cookie
-    if (!token) {
-      token = req.cookies?.auth_token;
+    // Fallback to cookie
+    if (!token && req.cookies?.auth_token) {
+      token = req.cookies.auth_token;
     }
 
     if (!token) {
-      return res.status(401).json({ message: "Authentication required" });
+      return res.status(401).json({ 
+        status: "fail",
+        message: "Authentication required. Please log in." 
+      });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || "secr3t"
-    ) as JwtPayload & {
-      id: string;
-      email: string;
-    };
+    if (!process.env.JWT_SECRET) {
+      throw new Error("FATAL: JWT_SECRET is not defined");
+    }
 
+    // Verify token
+    const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayload;
+
+    // Attach user to request
     req.user = {
-      id: decoded.id,
-      email: decoded.email,
+      id: decoded.id as string,
+      email: decoded.email as string,
     };
 
     return next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
-    return res.status(401).json({ message: "Invalid or expired token" });
+    // Better error handling for JWT specific errors
+    if (err instanceof TokenExpiredError) {
+      return res.status(401).json({ status: "fail", message: "Token has expired" });
+    }
+    if (err instanceof JsonWebTokenError) {
+      return res.status(401).json({ status: "fail", message: "Invalid token" });
+    }
+    
+    next(err); // Pass unexpected errors to global error handler
   }
 };

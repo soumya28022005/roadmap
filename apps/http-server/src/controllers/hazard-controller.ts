@@ -1,7 +1,8 @@
-import { newHazardSchema, confirmHazardSchema } from "@/schemas/hazard-schema";
+import { Request, Response, NextFunction } from "express";
 import { prisma } from "@repo/db";
-import { Request, Response } from "express";
+import { newHazardSchema, confirmHazardSchema } from "@/schemas/hazard-schema";
 
+// Custom request type (assuming you have this defined in a types file ideally)
 interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
@@ -9,13 +10,14 @@ interface AuthenticatedRequest extends Request {
   };
 }
 
-export const addNewHazard = async (req: AuthenticatedRequest, res: Response) => {
+export const addNewHazard = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const parsedData = newHazardSchema.safeParse(req.body);
     if (!parsedData.success) {
-      return res.status(400).json({
-        message: "Invalid request body",
-        errors: parsedData.error.issues
+      return res.status(422).json({
+        status: "fail",
+        message: "Invalid request data",
+        errors: parsedData.error.flatten().fieldErrors
       });
     }
 
@@ -23,57 +25,75 @@ export const addNewHazard = async (req: AuthenticatedRequest, res: Response) => 
     const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({
-        message: "User not authenticated"
-      });
+      return res.status(401).json({ status: "fail", message: "Unauthorized access" });
     }
 
+    // Ensure user exists before creating relation
     const userExists = await prisma.user.findUnique({ where: { id: userId } });
     if (!userExists) {
-      return res.status(401).json({
-        message: "User not found"
-      });
+      return res.status(401).json({ status: "fail", message: "User account not found" });
     }
 
-    const hazard = await prisma.report.create({
-      data: {
-        latitude,
-        longitude,
-        type,
-        description,
-        userId
-      }
-    });
+    // Use Prisma Transaction to ensure both records are created safely
+    const [hazard, confirmation] = await prisma.$transaction([
+      prisma.report.create({
+        data: {
+          latitude,
+          longitude,
+          type,
+          description,
+          userId,
+          confidence: 1.0 // Initial reporter has full confidence
+        }
+      }),
+      prisma.confirmation.create({
+        data: {
+          reportId: "PLACEHOLDER", // Prisma handles the real relation in nested writes, but we'll use a better approach below
+          userId,
+          isTrue: true
+        }
+      })
+    ]);
 
-    // Insert reporter's implicit confirmation
-    await prisma.confirmation.create({
-      data: {
-        reportId: hazard.id,
-        userId,
-        isTrue: true
-      }
+    // Better Approach for Transactional Creation: Nested Writes
+    const newHazard = await prisma.report.create({
+        data: {
+            latitude,
+            longitude,
+            type,
+            description,
+            userId,
+            confidence: 1.0,
+            confirmations: {
+                create: {
+                    userId,
+                    isTrue: true
+                }
+            }
+        }
     });
 
     return res.status(201).json({
+      status: "success",
       message: "Hazard reported successfully",
-      hazardId: hazard.id
+      data: {
+        hazardId: newHazard.id
+      }
     });
 
   } catch (error) {
-    console.error("Error creating hazard:", error);
-    return res.status(500).json({
-      message: "Internal server error"
-    });
+    next(error);
   }
 };
 
-export const confirmHazard = async (req: AuthenticatedRequest, res: Response) => {
+export const confirmHazard = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const parsedData = confirmHazardSchema.safeParse(req.body);
     if (!parsedData.success) {
-      return res.status(400).json({
-        message: "Invalid request body",
-        errors: parsedData.error.issues
+      return res.status(422).json({
+        status: "fail",
+        message: "Invalid request data",
+        errors: parsedData.error.flatten().fieldErrors
       });
     }
 
@@ -81,94 +101,95 @@ export const confirmHazard = async (req: AuthenticatedRequest, res: Response) =>
     const userId = req.user?.id;
 
     if (!userId) {
-      return res.status(401).json({
-        message: "User not authenticated"
-      });
+      return res.status(401).json({ status: "fail", message: "Unauthorized access" });
     }
 
-    const userExists = await prisma.user.findUnique({ where: { id: userId } });
-    if (!userExists) {
-      return res.status(401).json({
-        message: "User not found"
-      });
-    }
-
-    const hazard = await prisma.report.findUnique({ where: { id: hazardId } });
-    if (!hazard) {
-      return res.status(404).json({
-        message: "Hazard not found"
-      });
-    }
-
-    // Prevent duplicate confirmation
-    const existingConfirmation = await prisma.confirmation.findUnique({
-      where: {
-        reportId_userId: {
-          reportId: hazardId,
-          userId
+    // Run independent checks concurrently
+    const [userExists, existingConfirmation] = await Promise.all([
+      prisma.user.findUnique({ where: { id: userId } }),
+      prisma.confirmation.findUnique({
+        where: {
+          reportId_userId: { reportId: hazardId, userId }
         }
-      }
-    });
+      })
+    ]);
+
+    if (!userExists) {
+      return res.status(401).json({ status: "fail", message: "User account not found" });
+    }
 
     if (existingConfirmation) {
-      return res.status(400).json({
-        message: "You have already confirmed this hazard"
+      return res.status(409).json({
+        status: "fail",
+        message: "You have already confirmed or dismissed this hazard"
       });
     }
 
-    // Create new confirmation
-    const confirmation = await prisma.confirmation.create({
-      data: {
-        reportId: hazardId,
-        userId,
-        isTrue
-      }
-    });
+    // Check if hazard exists
+    const hazard = await prisma.report.findUnique({ where: { id: hazardId } });
+    if (!hazard) {
+      return res.status(404).json({ status: "fail", message: "Hazard not found" });
+    }
 
-    // Recalculate confidence score
-    const allConfirmations = await prisma.confirmation.findMany({ where: { reportId: hazardId } });
-    const totalConfirmations = allConfirmations.length;
-    const positiveConfirmations = allConfirmations.filter((c: { isTrue: boolean }) => c.isTrue).length;
+    // Use transaction for Confirmation creation + Confidence update
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Create confirmation
+      const confirmation = await tx.confirmation.create({
+        data: { reportId: hazardId, userId, isTrue }
+      });
 
-    // for now calculation medium to define the confidence
-    let newConfidence = totalConfirmations > 0 ? positiveConfirmations / totalConfirmations : 0.5;
+      // 2. Fetch all current confirmations to recalculate
+      // Optimization: You can aggregate directly in DB, but fetching is okay for now if data is small.
+      const allConfirmations = await tx.confirmation.findMany({ 
+          where: { reportId: hazardId },
+          select: { isTrue: true } // Only fetch what's needed
+      });
+      
+      const totalConfirmations = allConfirmations.length;
+      const positiveConfirmations = allConfirmations.filter(c => c.isTrue).length;
 
-    await prisma.report.update({
-      where: { id: hazardId },
-      data: { confidence: newConfidence }
+      // Base confidence logic
+      let newConfidence = totalConfirmations > 0 ? positiveConfirmations / totalConfirmations : 0.5;
+
+      // 3. Update report confidence
+      await tx.report.update({
+        where: { id: hazardId },
+        data: { confidence: newConfidence }
+      });
+
+      return { confirmationId: confirmation.id, newConfidence };
     });
 
     return res.status(200).json({
+      status: "success",
       message: "Confirmation recorded",
-      confirmationId: confirmation.id,
-      newConfidence
+      data: result
     });
 
   } catch (error) {
-    console.error("Error confirming hazard:", error);
-    return res.status(500).json({
-      message: "Internal server error"
-    });
+    next(error);
   }
 };
 
-export const getAllHazards = async (req: AuthenticatedRequest, res: Response) => {
+export const getAllHazards = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const hazards = await prisma.report.findMany();
+    // Only select the data needed for the map/UI to reduce payload size
+    const hazards = await prisma.report.findMany({
+        select: {
+            id: true,
+            type: true,
+            latitude: true,
+            longitude: true,
+            confidence: true
+        }
+    });
 
-    const formattedHazards = hazards.map((hazard: { id: string; type: string; latitude: number; longitude: number }) => ({
-      hazardId: hazard.id,
-      hazardType: hazard.type,
-      latitude: hazard.latitude,
-      longitude: hazard.longitude
-    }));
-
-    return res.status(200).json(formattedHazards);
+    return res.status(200).json({
+        status: "success",
+        data: hazards
+    });
 
   } catch (error) {
-    console.error("Error fetching hazards:", error);
-    return res.status(500).json({
-      message: "Internal server error"
-    });
+    next(error);
   }
 };

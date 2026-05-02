@@ -13,35 +13,50 @@ model User {
   phoneNumber   String         @unique
   email         String         @unique
   passwordHash  String
+  
   reports       Report[]
   confirmations Confirmation[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("users") // Standard postgres lowercase naming
 }
 
 model Report {
   id            String         @id @default(uuid())
-  user          User           @relation(fields: [userId], references: [id])
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String
   latitude      Float
   longitude     Float
   type          HazardType
   description   String?
   confidence    Float          @default(1.0)
-  createdAt     DateTime       @default(now())
+  
   confirmations Confirmation[]
+  
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   @@index([latitude, longitude])
+  @@index([userId]) // User-specific queries fast korar jonno
+  @@map("reports")
 }
 
 model Confirmation {
   id        String   @id @default(uuid())
-  report    Report   @relation(fields: [reportId], references: [id])
+  report    Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
   reportId  String
-  user      User     @relation(fields: [userId], references: [id])
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId    String
   isTrue    Boolean
+  
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([reportId, userId])
+  @@index([reportId]) 
+  @@map("confirmations")
 }
 
 enum HazardType {

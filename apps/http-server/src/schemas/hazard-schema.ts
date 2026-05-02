@@ -7,26 +7,20 @@ export const HazardType = [
   "ROAD_PATCH"
 ] as const;
 
-export const hazardSchema = z.object({
-  driverId: z.string(),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
-  type: z.enum(HazardType),
-  description: z.string().optional()
-});
-
-// Schema for creating a new hazard report
 export const newHazardSchema = z.object({
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  latitude: z.number()
+             .min(-90, "Latitude must be >= -90")
+             .max(90, "Latitude must be <= 90"),
+  longitude: z.number()
+              .min(-180, "Longitude must be >= -180")
+              .max(180, "Longitude must be <= 180"),
   type: z.enum(HazardType),
-  description: z.string().optional()
+  description: z.string().max(500, "Description cannot exceed 500 characters").optional()
 });
 
-// Schema for confirming a hazard
 export const confirmHazardSchema = z.object({
   isTrue: z.boolean(),
-  hazardId: z.string()
+  hazardId: z.string().uuid("Invalid Hazard ID format")
 });
 
 export type NewHazardRequest = z.infer<typeof newHazardSchema>;
