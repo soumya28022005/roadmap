@@ -17,11 +17,12 @@ model User {
   
   reports       Report[]
   confirmations Confirmation[]
+  rides         Ride[]         // 👈 ADD THIS LINE
 
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
-  @@map("users") // Standard postgres lowercase naming
+  @@map("users")
 }
 
 model Report {
@@ -65,4 +66,31 @@ enum HazardType {
   SINGLE_SPEED_BUMP
   MULTIPLE_SPEED_BUMP
   ROAD_PATCH
+}
+
+model Ride {
+  id          String     @id @default(uuid())
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  originLat   Float
+  originLng   Float
+  destLat     Float
+  destLng     Float
+  vehicleType String
+  status      RideStatus @default(IN_PROGRESS)
+  
+  startTime   DateTime   @default(now())
+  endTime     DateTime?  // Optional: gets filled when the ride ends
+
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([userId])
+  @@map("rides")
+}
+
+enum RideStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
 }

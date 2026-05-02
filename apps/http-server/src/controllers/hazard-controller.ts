@@ -28,34 +28,13 @@ export const addNewHazard = async (req: AuthenticatedRequest, res: Response, nex
       return res.status(401).json({ status: "fail", message: "Unauthorized access" });
     }
 
-    // Ensure user exists before creating relation
     const userExists = await prisma.user.findUnique({ where: { id: userId } });
     if (!userExists) {
       return res.status(401).json({ status: "fail", message: "User account not found" });
     }
 
-    // Use Prisma Transaction to ensure both records are created safely
-    const [hazard, confirmation] = await prisma.$transaction([
-      prisma.report.create({
-        data: {
-          latitude,
-          longitude,
-          type,
-          description,
-          userId,
-          confidence: 1.0 // Initial reporter has full confidence
-        }
-      }),
-      prisma.confirmation.create({
-        data: {
-          reportId: "PLACEHOLDER", // Prisma handles the real relation in nested writes, but we'll use a better approach below
-          userId,
-          isTrue: true
-        }
-      })
-    ]);
-
-    // Better Approach for Transactional Creation: Nested Writes
+    // 🔥 FIXED: Using Prisma's Nested Write feature
+    // Eta automatically backend-e transaction handle kore ebang sothik foreign key bosiye dey
     const newHazard = await prisma.report.create({
         data: {
             latitude,

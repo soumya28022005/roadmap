@@ -13,4 +13,4 @@ router.post("/end", authMiddleware, endRide);
 // responds the data related to any specific ride
 router.post("/:rideId", authMiddleware, getRideDetails);
 
-export { router as rideRouter };
+export { router as rideRouter };        
