@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from "express";
-import jwt, { JwtPayload, JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
+// 1. Error class gulo import theke soriye din
+import jwt, { JwtPayload } from "jsonwebtoken"; 
 
 export interface AuthenticatedRequest extends Request {
   user?: {
@@ -16,13 +17,11 @@ export const authMiddleware = (
   try {
     let token: string | undefined;
 
-    // First check Authorization header
     const authHeader = req.headers["authorization"];
     if (authHeader && authHeader.startsWith("Bearer ")) {
       token = authHeader.split(" ")[1];
     }
 
-    // Fallback to cookie
     if (!token && req.cookies?.auth_token) {
       token = req.cookies.auth_token;
     }
@@ -38,10 +37,8 @@ export const authMiddleware = (
       throw new Error("FATAL: JWT_SECRET is not defined");
     }
 
-    // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET) as JwtPayload;
 
-    // Attach user to request
     req.user = {
       id: decoded.id as string,
       email: decoded.email as string,
@@ -49,14 +46,14 @@ export const authMiddleware = (
 
     return next();
   } catch (err) {
-    // Better error handling for JWT specific errors
-    if (err instanceof TokenExpiredError) {
+    // 2. Ekhane jwt. object er theke error gulo check korun
+    if (err instanceof jwt.TokenExpiredError) {
       return res.status(401).json({ status: "fail", message: "Token has expired" });
     }
-    if (err instanceof JsonWebTokenError) {
+    if (err instanceof jwt.JsonWebTokenError) {
       return res.status(401).json({ status: "fail", message: "Invalid token" });
     }
     
-    next(err); // Pass unexpected errors to global error handler
+    next(err); 
   }
 };
