@@ -33,8 +33,8 @@ export const addNewHazard = async (req: AuthenticatedRequest, res: Response, nex
       return res.status(401).json({ status: "fail", message: "User account not found" });
     }
 
-    // 🔥 FIXED: Using Prisma's Nested Write feature
-    // Eta automatically backend-e transaction handle kore ebang sothik foreign key bosiye dey
+    // 🔥 FIXED: Removed the nested 'confirmations' creation.
+    // Now it only creates the hazard report directly.
     const newHazard = await prisma.report.create({
         data: {
             latitude,
@@ -42,13 +42,7 @@ export const addNewHazard = async (req: AuthenticatedRequest, res: Response, nex
             type,
             description,
             userId,
-            confidence: 1.0,
-            confirmations: {
-                create: {
-                    userId,
-                    isTrue: true
-                }
-            }
+            confidence: 1.0
         }
     });
 
