@@ -20,10 +20,10 @@ app.use(express.json({ limit: "10mb" })); // Payload size limit kora holo DDOS t
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// --- Routes ---
-app.use("/api/v1/auth", authRouter); // API versioning add kora industry standard
-app.use("/api/v1/ride", rideRouter);
-app.use("/api/v1/hazards", hazardRouter);
+
+app.use("/auth", authRouter); // API versioning add kora industry standard
+app.use("/ride", rideRouter);
+app.use("/hazards", hazardRouter);
 
 // --- Health Check ---
 app.get("/health", (req: Request, res: Response) => {
