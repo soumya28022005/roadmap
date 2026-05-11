@@ -55,13 +55,10 @@ export const signupController = async (req: Request, res: Response, next: NextFu
 
     res.cookie("auth_token", token, cookieOptions);
 
-    return res.status(201).json({ // 201 Created
-      status: "success",
-      message: "User created successfully",
-      data: {
-        user: { id: newUser.id, name: newUser.name, email: newUser.email },
-        token // Return token here as well if mobile apps are consuming this API
-      },
+     return res.status(200).json({
+      message: "Signin successful",
+      token:token,
+      user:{id: newUser.id}
     });
   } catch (err) {
     next(err); // Pass to global error handler
@@ -100,12 +97,9 @@ export const signinController = async (req: Request, res: Response, next: NextFu
     res.cookie("auth_token", token, cookieOptions);
 
     return res.status(200).json({
-      status: "success",
       message: "Signin successful",
-      data: {
-        user: { id: user.id, name: user.name, email: user.email },
-        token
-      }
+      token:token,
+      user:{id: user.id}
     });
   } catch (err) {
     next(err); 

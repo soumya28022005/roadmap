@@ -53,11 +53,8 @@ export const addNewHazard = async (req: AuthenticatedRequest, res: Response, nex
     });
 
     return res.status(201).json({
-      status: "success",
       message: "Hazard reported successfully",
-      data: {
-        hazardId: newHazard.id
-      }
+      hazardId: newHazard.id
     });
 
   } catch (error) {
@@ -163,10 +160,15 @@ export const getAllHazards = async (req: AuthenticatedRequest, res: Response, ne
         }
     });
 
-    return res.status(200).json({
-        status: "success",
-        data: hazards
-    });
+  return res.status(200).json(
+    hazards.map(hazard => ({
+      hazardId: hazard.id,
+      hazardType: hazard.type,
+      latitude: hazard.latitude,
+      longitude: hazard.longitude,
+      confidence: hazard.confidence
+    }))
+  );
 
   } catch (error) {
     next(error);

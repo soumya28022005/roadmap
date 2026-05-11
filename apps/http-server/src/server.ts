@@ -21,9 +21,9 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 
-app.use("/auth", authRouter); // API versioning add kora industry standard
-app.use("/ride", rideRouter);
-app.use("/hazards", hazardRouter);
+app.use("/api/v2/auth", authRouter); 
+app.use("/api/v2/ride", rideRouter);
+app.use("/api/v2/hazards", hazardRouter);
 
 // --- Health Check ---
 app.get("/health", (req: Request, res: Response) => {
